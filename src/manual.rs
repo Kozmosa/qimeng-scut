@@ -4,9 +4,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
-use serde::Deserialize;
 use walkdir::WalkDir;
+
+use crate::content::resolve_title;
 
 pub const TOP_LEVEL_SECTION_ID: &str = "__top_level__";
 pub const TOP_LEVEL_SECTION_TITLE: &str = "首页 / 顶层";
@@ -31,11 +31,6 @@ pub struct Entry {
     pub title: String,
     pub relative_path: PathBuf,
     pub source_path: PathBuf,
-}
-
-#[derive(Debug, Deserialize)]
-struct Frontmatter {
-    title: Option<String>,
 }
 
 impl ManualRepo {
@@ -151,7 +146,7 @@ fn build_entry(display_root: &Path, title_root: &Path, path: &Path) -> Result<En
         .strip_prefix(display_root)
         .map_err(|_| format!("无法计算相对路径：`{}`。", path.display()))?
         .to_path_buf();
-    let title = extract_title(&source, path);
+    let title = resolve_title(&source, path);
 
     Ok(Entry {
         title,
@@ -161,78 +156,6 @@ fn build_entry(display_root: &Path, title_root: &Path, path: &Path) -> Result<En
                 .map_err(|_| format!("无法计算标题相对路径：`{}`。", path.display()))?,
         ),
     })
-}
-
-fn extract_title(markdown: &str, path: &Path) -> String {
-    extract_frontmatter_title(markdown)
-        .or_else(|| extract_first_h1(markdown))
-        .unwrap_or_else(|| {
-            path.file_stem()
-                .unwrap_or_else(|| OsStr::new("untitled"))
-                .to_string_lossy()
-                .to_string()
-        })
-}
-
-fn extract_frontmatter_title(markdown: &str) -> Option<String> {
-    let (frontmatter, _) = split_frontmatter(markdown);
-    let frontmatter = frontmatter?;
-    let parsed = serde_yaml::from_str::<Frontmatter>(frontmatter).ok()?;
-    parsed.title.map(|title| title.trim().to_string())
-}
-
-fn extract_first_h1(markdown: &str) -> Option<String> {
-    let (_, body) = split_frontmatter(markdown);
-    let parser = Parser::new_ext(body, Options::ENABLE_TABLES);
-    let mut in_h1 = false;
-    let mut title = String::new();
-
-    for event in parser {
-        match event {
-            Event::Start(Tag::Heading { level, .. }) if level == HeadingLevel::H1 => {
-                in_h1 = true;
-            }
-            Event::End(TagEnd::Heading(HeadingLevel::H1)) if in_h1 => {
-                let normalized = normalize_inline_text(&title);
-                if !normalized.is_empty() {
-                    return Some(normalized);
-                }
-                in_h1 = false;
-            }
-            Event::Text(text) | Event::Code(text) if in_h1 => title.push_str(&text),
-            Event::SoftBreak | Event::HardBreak if in_h1 => title.push(' '),
-            _ => {}
-        }
-    }
-
-    None
-}
-
-pub(crate) fn split_frontmatter(markdown: &str) -> (Option<&str>, &str) {
-    let mut lines = markdown.split_inclusive('\n');
-    let Some(first_line) = lines.next() else {
-        return (None, markdown);
-    };
-    if first_line.trim_end_matches(['\r', '\n']) != "---" {
-        return (None, markdown);
-    }
-
-    let mut offset = first_line.len();
-    for line in lines {
-        let trimmed = line.trim_end_matches(['\r', '\n']);
-        if trimmed == "---" {
-            let frontmatter = &markdown[first_line.len()..offset];
-            offset += line.len();
-            return (Some(frontmatter), &markdown[offset..]);
-        }
-        offset += line.len();
-    }
-
-    (None, markdown)
-}
-
-fn normalize_inline_text(value: &str) -> String {
-    value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn is_markdown(path: &Path) -> bool {
@@ -256,7 +179,7 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::{extract_first_h1, extract_frontmatter_title, split_frontmatter, ManualRepo};
+    use super::ManualRepo;
 
     fn fixture_root(name: &str) -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -293,32 +216,6 @@ mod tests {
             .iter()
             .all(|section| section.title != ".vuepress"));
         assert!(repo.sections.iter().all(|section| section.title != "empty"));
-    }
-
-    #[test]
-    fn frontmatter_title_has_highest_priority() {
-        let markdown = "---\ntitle: 来自 frontmatter\n---\n# 来自标题\n";
-
-        assert_eq!(
-            extract_frontmatter_title(markdown).as_deref(),
-            Some("来自 frontmatter")
-        );
-    }
-
-    #[test]
-    fn first_heading_falls_back_when_frontmatter_missing() {
-        let markdown = "一些导语\n\n# 第一标题\n\n正文";
-
-        assert_eq!(extract_first_h1(markdown).as_deref(), Some("第一标题"));
-    }
-
-    #[test]
-    fn split_frontmatter_returns_body_without_yaml() {
-        let markdown = "---\ntitle: 首页\n---\n# 标题\n";
-        let (frontmatter, body) = split_frontmatter(markdown);
-
-        assert_eq!(frontmatter, Some("title: 首页\n"));
-        assert_eq!(body, "# 标题\n");
     }
 
     #[test]
