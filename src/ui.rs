@@ -8,7 +8,26 @@ use ratatui::{
 
 use crate::app::{App, AppMode, ManualFocus, StatusKind, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH};
 
-const BANNER: &[&str] = &["启梦 SCUT", "连接华工智慧，助力学习科研"];
+const PATH_PROMPT_BANNER: &[&str] = &["启梦 SCUT", "连接华工智慧，助力学习科研"];
+const HOME_ASCII_BANNER_MIN_WIDTH: u16 = 84;
+const HOME_ASCII_BANNER: &[&str] = &[
+    "  ____  _                          ____   ____ _   _ _____   ____ _     ___ ",
+    " / __ \\(_)___ ___  ___  ____ ___  / __/  / ___| | | |_   _| / ___| |   |_ _|",
+    "/ / / / / __ `__ \\/ _ \\/ __ `__ \\/ /_   | |   | | | | | |  | |   | |    | | ",
+    "/ /_/ / / / / / / /  __/ / / / / / __/  | |___| |_| | | |  | |___| |___ | | ",
+    "\\___\\_\\/_/ /_/ /_/\\___/_/ /_/ /_/_/      \\____|\\___/  |_|   \\____|_____|___|",
+];
+const HOME_COMPACT_BANNER: &[&str] = &[
+    "启梦 SCUT CLI 感",
+    "启梦·SCUT CLI",
+    "连接华工智慧，助力学习科研",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HomeBannerVariant {
+    Ascii,
+    Compact,
+}
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     frame.render_widget(Clear, frame.area());
@@ -37,7 +56,7 @@ fn render_path_prompt(frame: &mut Frame, app: &App) {
     .alignment(Alignment::Center);
     frame.render_widget(title, layout[0]);
 
-    let banner = Paragraph::new(BANNER.join("\n"))
+    let banner = Paragraph::new(PATH_PROMPT_BANNER.join("\n"))
         .alignment(Alignment::Center)
         .style(
             Style::default()
@@ -81,28 +100,20 @@ fn render_path_prompt(frame: &mut Frame, app: &App) {
 }
 
 fn render_home(frame: &mut Frame, app: &App) {
+    let banner_variant = select_home_banner(frame.area().width);
+    let banner_height = home_banner_height(banner_variant);
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(7),
+            Constraint::Length(banner_height),
             Constraint::Length(4),
             Constraint::Length(5),
-            Constraint::Min(6),
+            Constraint::Min(4),
             Constraint::Length(3),
         ])
         .split(frame.area());
 
-    let banner = Paragraph::new(vec![
-        Line::from(Span::styled(
-            "启梦 SCUT CLI 感",
-            Style::default()
-                .fg(Color::Blue)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from("启梦 SCUT CLI"),
-        Line::from("连接华工智慧，助力学习科研"),
-    ])
-    .alignment(Alignment::Left);
+    let banner = Paragraph::new(home_banner_text(banner_variant)).alignment(Alignment::Left);
     frame.render_widget(banner, layout[0]);
 
     let meta = Paragraph::new(vec![
@@ -352,6 +363,87 @@ fn render_resize_message(frame: &mut Frame) {
     frame.render_widget(body, area);
 }
 
+fn select_home_banner(width: u16) -> HomeBannerVariant {
+    if width >= HOME_ASCII_BANNER_MIN_WIDTH {
+        HomeBannerVariant::Ascii
+    } else {
+        HomeBannerVariant::Compact
+    }
+}
+
+fn home_banner_height(variant: HomeBannerVariant) -> u16 {
+    match variant {
+        HomeBannerVariant::Ascii => (HOME_ASCII_BANNER.len() + 3) as u16,
+        HomeBannerVariant::Compact => HOME_COMPACT_BANNER.len() as u16,
+    }
+}
+
+fn home_banner_text(variant: HomeBannerVariant) -> Text<'static> {
+    match variant {
+        HomeBannerVariant::Ascii => Text::from(vec![
+            Line::from(Span::styled(
+                HOME_ASCII_BANNER[0],
+                Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(
+                HOME_ASCII_BANNER[1],
+                Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(
+                HOME_ASCII_BANNER[2],
+                Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(
+                HOME_ASCII_BANNER[3],
+                Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(
+                HOME_ASCII_BANNER[4],
+                Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "启梦·SCUT CLI",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(
+                "连接华工智慧，助力学习科研",
+                Style::default().fg(Color::Cyan),
+            )),
+        ]),
+        HomeBannerVariant::Compact => Text::from(vec![
+            Line::from(Span::styled(
+                HOME_COMPACT_BANNER[0],
+                Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(
+                HOME_COMPACT_BANNER[1],
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(
+                HOME_COMPACT_BANNER[2],
+                Style::default().fg(Color::Cyan),
+            )),
+        ]),
+    }
+}
+
 fn pane_block(title: &str, focused: bool) -> Block<'_> {
     let border_style = if focused {
         Style::default().fg(Color::Cyan)
@@ -382,4 +474,31 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(vertical[1])[1]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        home_banner_height, select_home_banner, HomeBannerVariant, HOME_ASCII_BANNER_MIN_WIDTH,
+    };
+
+    #[test]
+    fn uses_ascii_banner_when_terminal_is_wide_enough() {
+        assert_eq!(
+            select_home_banner(HOME_ASCII_BANNER_MIN_WIDTH),
+            HomeBannerVariant::Ascii
+        );
+    }
+
+    #[test]
+    fn falls_back_to_compact_banner_when_terminal_is_narrow() {
+        assert_eq!(
+            select_home_banner(HOME_ASCII_BANNER_MIN_WIDTH - 1),
+            HomeBannerVariant::Compact
+        );
+        assert!(
+            home_banner_height(HomeBannerVariant::Ascii)
+                > home_banner_height(HomeBannerVariant::Compact)
+        );
+    }
 }
