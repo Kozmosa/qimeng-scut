@@ -1,3 +1,6 @@
+use std::sync::OnceLock;
+
+use figlet_rs::FIGlet;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -5,28 +8,31 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
     Frame,
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::app::{App, AppMode, ManualFocus, StatusKind, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH};
 
 const PATH_PROMPT_BANNER: &[&str] = &["启梦 SCUT", "连接华工智慧，助力学习科研"];
-const HOME_ASCII_BANNER_MIN_WIDTH: u16 = 84;
-const HOME_ASCII_BANNER: &[&str] = &[
-    "  ____  _                          ____   ____ _   _ _____   ____ _     ___ ",
-    " / __ \\(_)___ ___  ___  ____ ___  / __/  / ___| | | |_   _| / ___| |   |_ _|",
-    "/ / / / / __ `__ \\/ _ \\/ __ `__ \\/ /_   | |   | | | | | |  | |   | |    | | ",
-    "/ /_/ / / / / / / /  __/ / / / / / __/  | |___| |_| | | |  | |___| |___ | | ",
-    "\\___\\_\\/_/ /_/ /_/\\___/_/ /_/ /_/_/      \\____|\\___/  |_|   \\____|_____|___|",
-];
+const HOME_FIGLET_TEXT: &str = "Qimeng SCUT CLI";
+const HOME_SUBTITLE_LINES: &[&str] = &["启梦·SCUT CLI", "连接华工智慧，助力学习科研"];
 const HOME_COMPACT_BANNER: &[&str] = &[
     "启梦 SCUT CLI 感",
     "启梦·SCUT CLI",
     "连接华工智慧，助力学习科研",
 ];
+static HOME_ASCII_BANNER: OnceLock<Option<HomeBannerData>> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HomeBannerVariant {
     Ascii,
     Compact,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HomeBannerData {
+    lines: Vec<String>,
+    width: u16,
+    height: u16,
 }
 
 pub fn render(frame: &mut Frame, app: &mut App) {
@@ -364,65 +370,26 @@ fn render_resize_message(frame: &mut Frame) {
 }
 
 fn select_home_banner(width: u16) -> HomeBannerVariant {
-    if width >= HOME_ASCII_BANNER_MIN_WIDTH {
-        HomeBannerVariant::Ascii
-    } else {
-        HomeBannerVariant::Compact
+    match load_home_ascii_banner() {
+        Some(banner) if width >= banner.width.saturating_add(2) => HomeBannerVariant::Ascii,
+        _ => HomeBannerVariant::Compact,
     }
 }
 
 fn home_banner_height(variant: HomeBannerVariant) -> u16 {
     match variant {
-        HomeBannerVariant::Ascii => (HOME_ASCII_BANNER.len() + 3) as u16,
+        HomeBannerVariant::Ascii => load_home_ascii_banner()
+            .map(|banner| banner.height + HOME_SUBTITLE_LINES.len() as u16 + 1)
+            .unwrap_or(HOME_COMPACT_BANNER.len() as u16),
         HomeBannerVariant::Compact => HOME_COMPACT_BANNER.len() as u16,
     }
 }
 
 fn home_banner_text(variant: HomeBannerVariant) -> Text<'static> {
     match variant {
-        HomeBannerVariant::Ascii => Text::from(vec![
-            Line::from(Span::styled(
-                HOME_ASCII_BANNER[0],
-                Style::default()
-                    .fg(Color::Blue)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(Span::styled(
-                HOME_ASCII_BANNER[1],
-                Style::default()
-                    .fg(Color::Blue)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(Span::styled(
-                HOME_ASCII_BANNER[2],
-                Style::default()
-                    .fg(Color::Blue)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(Span::styled(
-                HOME_ASCII_BANNER[3],
-                Style::default()
-                    .fg(Color::Blue)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(Span::styled(
-                HOME_ASCII_BANNER[4],
-                Style::default()
-                    .fg(Color::Blue)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                "启梦·SCUT CLI",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(Span::styled(
-                "连接华工智慧，助力学习科研",
-                Style::default().fg(Color::Cyan),
-            )),
-        ]),
+        HomeBannerVariant::Ascii => load_home_ascii_banner()
+            .map(ascii_banner_text)
+            .unwrap_or_else(compact_banner_text),
         HomeBannerVariant::Compact => Text::from(vec![
             Line::from(Span::styled(
                 HOME_COMPACT_BANNER[0],
@@ -442,6 +409,93 @@ fn home_banner_text(variant: HomeBannerVariant) -> Text<'static> {
             )),
         ]),
     }
+}
+
+fn load_home_ascii_banner() -> Option<&'static HomeBannerData> {
+    HOME_ASCII_BANNER
+        .get_or_init(build_home_ascii_banner)
+        .as_ref()
+}
+
+fn build_home_ascii_banner() -> Option<HomeBannerData> {
+    let font = FIGlet::slant().ok()?;
+    let figure = font.convert(HOME_FIGLET_TEXT)?;
+    let mut lines = figure
+        .as_str()
+        .lines()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+
+    while lines.last().is_some_and(|line| line.is_empty()) {
+        lines.pop();
+    }
+
+    if lines.is_empty() {
+        return None;
+    }
+
+    let width = lines
+        .iter()
+        .map(|line| UnicodeWidthStr::width(line.as_str()) as u16)
+        .max()
+        .unwrap_or(0);
+
+    Some(HomeBannerData {
+        width,
+        height: lines.len() as u16,
+        lines,
+    })
+}
+
+fn ascii_banner_text(banner: &HomeBannerData) -> Text<'static> {
+    let mut lines = banner
+        .lines
+        .iter()
+        .cloned()
+        .map(|line| {
+            Line::from(Span::styled(
+                line,
+                Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
+            ))
+        })
+        .collect::<Vec<_>>();
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        HOME_SUBTITLE_LINES[0],
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(Span::styled(
+        HOME_SUBTITLE_LINES[1],
+        Style::default().fg(Color::Cyan),
+    )));
+
+    Text::from(lines)
+}
+
+fn compact_banner_text() -> Text<'static> {
+    Text::from(vec![
+        Line::from(Span::styled(
+            HOME_COMPACT_BANNER[0],
+            Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            HOME_COMPACT_BANNER[1],
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            HOME_COMPACT_BANNER[2],
+            Style::default().fg(Color::Cyan),
+        )),
+    ])
 }
 
 fn pane_block(title: &str, focused: bool) -> Block<'_> {
@@ -479,21 +533,34 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::{
-        home_banner_height, select_home_banner, HomeBannerVariant, HOME_ASCII_BANNER_MIN_WIDTH,
+        home_banner_height, load_home_ascii_banner, select_home_banner, HomeBannerVariant,
     };
 
     #[test]
+    fn loads_slant_banner_successfully() {
+        let banner = load_home_ascii_banner().expect("slant banner should load");
+
+        assert!(banner.width > 0);
+        assert!(banner.height > 0);
+        assert!(banner.lines.len() > 1);
+    }
+
+    #[test]
     fn uses_ascii_banner_when_terminal_is_wide_enough() {
+        let banner = load_home_ascii_banner().expect("slant banner should load");
+
         assert_eq!(
-            select_home_banner(HOME_ASCII_BANNER_MIN_WIDTH),
+            select_home_banner(banner.width.saturating_add(2)),
             HomeBannerVariant::Ascii
         );
     }
 
     #[test]
     fn falls_back_to_compact_banner_when_terminal_is_narrow() {
+        let banner = load_home_ascii_banner().expect("slant banner should load");
+
         assert_eq!(
-            select_home_banner(HOME_ASCII_BANNER_MIN_WIDTH - 1),
+            select_home_banner(banner.width.saturating_add(1)),
             HomeBannerVariant::Compact
         );
         assert!(
