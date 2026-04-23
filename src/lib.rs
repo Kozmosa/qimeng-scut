@@ -1,4 +1,5 @@
 pub mod app;
+pub mod content;
 pub mod input;
 pub mod manual;
 pub mod ui;
