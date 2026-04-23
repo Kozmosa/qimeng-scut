@@ -1,14 +1,10 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use std::{path::PathBuf, time::Duration};
 
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{backend::CrosstermBackend, Terminal};
 
-use crate::{input::TextInput, ui};
+use crate::{input::TextInput, manual, ui};
 
 pub type AppTerminal = Terminal<CrosstermBackend<std::io::Stdout>>;
 
@@ -49,7 +45,7 @@ impl App {
         let default_path = PathBuf::from(DEFAULT_MANUAL_REPO);
         let default_input = default_path.display().to_string();
 
-        if is_valid_manual_repo(&default_path) {
+        if manual::validate_repo_root(&default_path).is_ok() {
             Self {
                 mode: AppMode::Home,
                 should_quit: false,
@@ -95,7 +91,7 @@ impl App {
     fn handle_path_prompt(&mut self, key: KeyEvent) {
         if matches!(key.code, KeyCode::Enter) {
             let candidate = PathBuf::from(self.path_input.value().trim());
-            if is_valid_manual_repo(&candidate) {
+            if manual::validate_repo_root(&candidate).is_ok() {
                 self.manual_repo_path = candidate;
                 self.mode = AppMode::Home;
                 self.status = Some(StatusMessage {
@@ -153,39 +149,26 @@ pub fn run_app(terminal: &mut AppTerminal, mut app: App) -> Result<()> {
     Ok(())
 }
 
-fn is_valid_manual_repo(path: &Path) -> bool {
-    let Ok(metadata) = fs::metadata(path) else {
-        return false;
-    };
-    if !metadata.is_dir() {
-        return false;
-    }
-
-    fs::metadata(path.join("docs"))
-        .map(|docs_metadata| docs_metadata.is_dir())
-        .unwrap_or(false)
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs;
 
     use tempfile::tempdir;
 
-    use super::is_valid_manual_repo;
+    use crate::manual::validate_repo_root;
 
     #[test]
     fn validates_directory_with_docs_subdirectory() {
         let temp = tempdir().expect("tempdir");
         fs::create_dir(temp.path().join("docs")).expect("create docs");
 
-        assert!(is_valid_manual_repo(temp.path()));
+        assert!(validate_repo_root(temp.path()).is_ok());
     }
 
     #[test]
     fn rejects_directory_without_docs_subdirectory() {
         let temp = tempdir().expect("tempdir");
 
-        assert!(!is_valid_manual_repo(temp.path()));
+        assert!(validate_repo_root(temp.path()).is_err());
     }
 }
