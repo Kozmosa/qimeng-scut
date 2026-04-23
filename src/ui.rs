@@ -1,20 +1,21 @@
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    text::{Line, Span, Text},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
     Frame,
 };
 
-use crate::app::{App, AppMode, StatusKind};
+use crate::app::{App, AppMode, ManualFocus, StatusKind, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH};
 
 const BANNER: &[&str] = &["启梦 SCUT", "连接华工智慧，助力学习科研"];
 
-pub fn render(frame: &mut Frame, app: &App) {
+pub fn render(frame: &mut Frame, app: &mut App) {
     frame.render_widget(Clear, frame.area());
     match app.mode {
         AppMode::PathPrompt => render_path_prompt(frame, app),
         AppMode::Home => render_home(frame, app),
+        AppMode::Manual => render_manual(frame, app),
     }
 }
 
@@ -138,6 +139,177 @@ fn render_home(frame: &mut Frame, app: &App) {
     );
 }
 
+fn render_manual(frame: &mut Frame, app: &mut App) {
+    let Some(manual) = app.manual_state.as_mut() else {
+        render_status(frame, frame.area(), "手册状态未初始化。", true);
+        return;
+    };
+
+    if frame.area().width < MIN_TERMINAL_WIDTH || frame.area().height < MIN_TERMINAL_HEIGHT {
+        render_resize_message(frame);
+        return;
+    }
+
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(10),
+            Constraint::Length(2),
+        ])
+        .split(frame.area());
+
+    let header = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled(
+                "Qimeng SCUT",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" · Manual"),
+        ]),
+        Line::from(format!("仓库路径：{}", manual.repo_path.display())),
+    ])
+    .block(Block::default().borders(Borders::BOTTOM));
+    frame.render_widget(header, layout[0]);
+
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(20),
+            Constraint::Percentage(30),
+            Constraint::Percentage(50),
+        ])
+        .split(layout[1]);
+
+    render_section_pane(frame, columns[0], manual);
+    render_entry_pane(frame, columns[1], manual);
+    render_content_pane(frame, columns[2], manual);
+
+    let footer =
+        Paragraph::new("q: 退出  Esc: 返回首页  ←/→: 切换栏位  ↑/↓: 移动或滚动  Enter: 确认")
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(Alignment::Center);
+    frame.render_widget(footer, layout[2]);
+}
+
+fn render_section_pane(frame: &mut Frame, area: Rect, manual: &ManualFocusState) {
+    let title = "章节";
+    let items = if manual.sections().is_empty() {
+        vec![ListItem::new("No sections")]
+    } else {
+        manual
+            .sections()
+            .iter()
+            .enumerate()
+            .map(|(index, section)| {
+                let marker = if index == manual.active_section {
+                    "* "
+                } else {
+                    "  "
+                };
+                ListItem::new(format!("{marker}{}", section.title))
+            })
+            .collect::<Vec<_>>()
+    };
+
+    render_list(
+        frame,
+        area,
+        title,
+        items,
+        manual
+            .section_cursor
+            .min(manual.sections().len().saturating_sub(1)),
+        manual.focus == ManualFocus::Sections,
+    );
+}
+
+fn render_entry_pane(frame: &mut Frame, area: Rect, manual: &ManualFocusState) {
+    let title = match manual.section_title() {
+        Some(section_title) => format!("文档 · {section_title}"),
+        None => "文档".to_string(),
+    };
+
+    let items = if manual.active_entries().is_empty() {
+        vec![ListItem::new("No documents")]
+    } else {
+        manual
+            .active_entries()
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| {
+                let marker = if manual.active_entry == Some(index) {
+                    "* "
+                } else {
+                    "  "
+                };
+                ListItem::new(format!(
+                    "{marker}{} ({})",
+                    entry.title,
+                    entry.relative_path.display()
+                ))
+            })
+            .collect::<Vec<_>>()
+    };
+
+    render_list(
+        frame,
+        area,
+        &title,
+        items,
+        manual
+            .entry_cursor
+            .min(manual.active_entries().len().saturating_sub(1)),
+        manual.focus == ManualFocus::Entries,
+    );
+}
+
+type ManualFocusState = crate::app::ManualState;
+
+fn render_content_pane(frame: &mut Frame, area: Rect, manual: &mut ManualFocusState) {
+    let title = manual.content_title();
+    let block = pane_block(&title, manual.focus == ManualFocus::Content);
+    let inner = block.inner(area);
+    manual.sync_content_layout(inner.width, inner.height);
+    let lines = manual.rendered_content_lines(inner.width as usize);
+    let paragraph = Paragraph::new(Text::from(
+        lines.into_iter().map(Line::from).collect::<Vec<_>>(),
+    ))
+    .block(block)
+    .scroll((manual.content_scroll, 0));
+    frame.render_widget(paragraph, area);
+}
+
+fn render_list(
+    frame: &mut Frame,
+    area: Rect,
+    title: &str,
+    items: Vec<ListItem<'static>>,
+    selected: usize,
+    focused: bool,
+) {
+    let mut state = ListState::default();
+    if !items.is_empty() {
+        state.select(Some(selected.min(items.len().saturating_sub(1))));
+    }
+
+    let highlight_style = if focused {
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().add_modifier(Modifier::BOLD)
+    };
+    let list = List::new(items)
+        .block(pane_block(title, focused))
+        .highlight_style(highlight_style)
+        .highlight_symbol("> ");
+    frame.render_stateful_widget(list, area, &mut state);
+}
+
 fn render_status(frame: &mut Frame, area: Rect, text: &str, is_error: bool) {
     let color = if is_error {
         Color::LightRed
@@ -163,6 +335,33 @@ fn render_input_box(frame: &mut Frame, area: Rect, title: &str, value: &str, cur
     frame.render_widget(paragraph, area);
 
     frame.set_cursor_position((area.x + cursor as u16 + 1, area.y + 1));
+}
+
+fn render_resize_message(frame: &mut Frame) {
+    let area = centered_rect(70, 30, frame.area());
+    let body = Paragraph::new(vec![
+        Line::from("终端窗口过小，无法显示三栏手册布局。"),
+        Line::from(format!(
+            "请将窗口调整到至少 {}x{}。",
+            MIN_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT
+        )),
+    ])
+    .alignment(Alignment::Center)
+    .block(Block::default().title("需要更大窗口").borders(Borders::ALL))
+    .wrap(Wrap { trim: false });
+    frame.render_widget(body, area);
+}
+
+fn pane_block(title: &str, focused: bool) -> Block<'_> {
+    let border_style = if focused {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(border_style)
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
