@@ -65,6 +65,7 @@ pub struct ManualState {
     pub active_entry: Option<usize>,
     pub content_scroll: u16,
     pub content_viewport_height: u16,
+    pub content_dual_column: bool,
     pub loaded_document: Option<LoadedDocument>,
 }
 
@@ -194,6 +195,7 @@ impl App {
             KeyCode::Up => manual_state.move_up(),
             KeyCode::Down => manual_state.move_down(),
             KeyCode::Enter => manual_state.confirm_focus(),
+            KeyCode::Char('t') => manual_state.toggle_dual_column(),
             _ => {}
         }
     }
@@ -248,6 +250,7 @@ impl ManualState {
             active_entry: None,
             content_scroll: 0,
             content_viewport_height: 0,
+            content_dual_column: false,
             loaded_document: None,
         };
         state.reload();
@@ -350,6 +353,11 @@ impl ManualState {
         ratatui::text::Text::from(lines)
     }
 
+    pub fn toggle_dual_column(&mut self) {
+        self.content_dual_column = !self.content_dual_column;
+        self.content_scroll = 0;
+    }
+
     pub fn sync_content_layout(&mut self, width: u16, height: u16) {
         self.content_viewport_height = height;
         if let Some(document) = self.loaded_document.as_mut() {
@@ -441,6 +449,7 @@ impl ManualState {
         self.active_entry = None;
         self.loaded_document = None;
         self.content_scroll = 0;
+        self.content_dual_column = false;
 
         if !self.active_entries().is_empty() {
             self.open_entry(0);
@@ -458,6 +467,7 @@ impl ManualState {
         self.active_entry = Some(index);
         self.loaded_document = Some(LoadedDocument::from_entry(&entry));
         self.content_scroll = 0;
+        self.content_dual_column = false;
         self.clamp_scroll(self.cached_content_width());
     }
 
