@@ -23,4 +23,8 @@ target
 
 # Coding Agents
 .superpowers/plans
+docs/.superpowers/plans
+.superpowers/brainstorm
+.claude/
+
 demo.png
