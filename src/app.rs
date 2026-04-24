@@ -1,11 +1,15 @@
-use std::{fs, path::PathBuf, time::Duration};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 use crate::{
-    content::{Block, DocumentContent, RichContentRenderCache},
+    content::{render_rich_text, Block, DocumentContent, RichContentRenderCache},
     input::TextInput,
     manual::{self, Entry, ManualRepo, Section},
     ui,
@@ -82,8 +86,11 @@ pub struct App {
 
 impl App {
     pub fn new() -> Self {
-        let default_path = PathBuf::from(DEFAULT_MANUAL_REPO);
-        let default_input = default_path.display().to_string();
+        let default_path = expand_home_path(
+            DEFAULT_MANUAL_REPO,
+            home_dir().as_deref().unwrap_or_else(|| Path::new("")),
+        );
+        let default_input = DEFAULT_MANUAL_REPO.to_string();
         let path_valid = manual::validate_repo_root(&default_path).is_ok();
 
         Self {
@@ -100,7 +107,8 @@ impl App {
             } else {
                 StatusMessage {
                     kind: StatusKind::Error,
-                    text: "默认手册仓库无效，输入 `manual` 时需指定一个包含 docs/ 的本地路径。".to_string(),
+                    text: "默认手册仓库无效，输入 `manual` 时需指定一个包含 docs/ 的本地路径。"
+                        .to_string(),
                 }
             }),
             manual_state: None,
@@ -126,7 +134,10 @@ impl App {
 
     fn handle_path_prompt(&mut self, key: KeyEvent) {
         if matches!(key.code, KeyCode::Enter) {
-            let candidate = PathBuf::from(self.path_input.value().trim());
+            let candidate = expand_home_path(
+                self.path_input.value().trim(),
+                home_dir().as_deref().unwrap_or_else(|| Path::new("")),
+            );
             if manual::validate_repo_root(&candidate).is_ok() {
                 self.manual_repo_path = candidate;
                 self.mode = AppMode::Home;
@@ -157,7 +168,8 @@ impl App {
                 "help" => {
                     self.status = Some(StatusMessage {
                         kind: StatusKind::Info,
-                        text: "可用命令：manual（浏览手册）、help（显示帮助）、exit（退出程序）。".to_string(),
+                        text: "可用命令：manual（浏览手册）、help（显示帮助）、exit（退出程序）。"
+                            .to_string(),
                     });
                 }
                 "exit" => {
@@ -217,14 +229,31 @@ impl App {
     }
 }
 
+fn home_dir() -> Option<PathBuf> {
+    env::var_os("HOME")
+        .filter(|home| !home.is_empty())
+        .map(PathBuf::from)
+}
+
+fn expand_home_path(input: &str, home: &Path) -> PathBuf {
+    match input {
+        "~" => home.to_path_buf(),
+        path if path.starts_with("~/") => home.join(&path[2..]),
+        path => PathBuf::from(path),
+    }
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LoadedDocument {
     fn from_entry(entry: &Entry) -> Self {
         let source = match fs::read_to_string(&entry.source_path) {
             Ok(source) => source,
-            Err(error) => format!(
-                "读取文档失败：{} ({error})",
-                entry.source_path.display()
-            ),
+            Err(error) => format!("读取文档失败：{} ({error})", entry.source_path.display()),
         };
 
         Self {
@@ -345,22 +374,7 @@ impl ManualState {
             "按 Enter 打开当前文档。".to_string()
         };
 
-        let parsed = tui_markdown::from_str(&placeholder);
-        let lines: Vec<ratatui::text::Line<'static>> = parsed
-            .lines
-            .into_iter()
-            .map(|line| {
-                let spans: Vec<ratatui::text::Span<'static>> = line
-                    .spans
-                    .into_iter()
-                    .map(|span| {
-                        ratatui::text::Span::styled(span.content.to_string(), span.style)
-                    })
-                    .collect();
-                ratatui::text::Line::from(spans).style(line.style)
-            })
-            .collect();
-        ratatui::text::Text::from(lines)
+        render_rich_text(&placeholder)
     }
 
     pub fn toggle_dual_column(&mut self) {
@@ -489,7 +503,12 @@ impl ManualState {
         } else {
             self.rendered_content_text(width).lines.len()
         };
-        let max_scroll = total_lines.saturating_sub(viewport_height);
+        let visible_lines = if self.content_dual_column {
+            total_lines / 2 + total_lines % 2
+        } else {
+            total_lines
+        };
+        let max_scroll = visible_lines.saturating_sub(viewport_height);
         self.content_scroll = self.content_scroll.min(max_scroll as u16);
     }
 
@@ -539,7 +558,7 @@ mod tests {
 
     use crate::manual::validate_repo_root;
 
-    use super::{ManualFocus, ManualState};
+    use super::{expand_home_path, ManualFocus, ManualState};
 
     fn fixture_root(name: &str) -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -560,6 +579,25 @@ mod tests {
         let temp = tempdir().expect("tempdir");
 
         assert!(validate_repo_root(temp.path()).is_err());
+    }
+
+    #[test]
+    fn expands_tilde_prefixed_manual_repo_paths() {
+        let home = PathBuf::from("/tmp/qimeng-home");
+
+        assert_eq!(expand_home_path("~", &home), home);
+        assert_eq!(
+            expand_home_path("~/survive-in-scut", &home),
+            home.join("survive-in-scut")
+        );
+        assert_eq!(
+            expand_home_path("/tmp/manual", &home),
+            PathBuf::from("/tmp/manual")
+        );
+        assert_eq!(
+            expand_home_path("~other/manual", &home),
+            PathBuf::from("~other/manual")
+        );
     }
 
     #[test]
@@ -615,6 +653,24 @@ mod tests {
 
         let lines = state.rendered_content_lines(18);
         let expected_max = lines.len().saturating_sub(2) as u16;
+        assert_eq!(state.content_scroll, expected_max);
+    }
+
+    #[test]
+    fn dual_column_scroll_clamps_to_split_column_height() {
+        let mut state = ManualState::new(fixture_root("manual_repo"));
+
+        state.focus = ManualFocus::Entries;
+        state.move_down();
+        state.confirm_focus();
+        state.toggle_dual_column();
+        state.sync_content_layout(80, 2);
+        state.content_scroll = 999;
+        state.sync_content_layout(80, 2);
+
+        let lines = state.rendered_content_lines(80);
+        let column_height = lines.len() / 2 + lines.len() % 2;
+        let expected_max = column_height.saturating_sub(2) as u16;
         assert_eq!(state.content_scroll, expected_max);
     }
 }

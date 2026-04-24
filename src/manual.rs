@@ -72,7 +72,7 @@ impl ManualRepo {
         if !top_level_files.is_empty() {
             let entries = top_level_files
                 .iter()
-                .map(|path| build_entry(&docs_path, &docs_path, path))
+                .map(|path| build_entry(&docs_path, path))
                 .collect::<Result<Vec<_>, _>>()?;
             sections.push(Section {
                 id: TOP_LEVEL_SECTION_ID.to_string(),
@@ -135,11 +135,11 @@ fn collect_entries(section_root: &Path) -> Result<Vec<Entry>, String> {
     paths.sort();
     paths
         .into_iter()
-        .map(|path| build_entry(section_root, section_root, &path))
+        .map(|path| build_entry(section_root, &path))
         .collect()
 }
 
-fn build_entry(display_root: &Path, title_root: &Path, path: &Path) -> Result<Entry, String> {
+fn build_entry(display_root: &Path, path: &Path) -> Result<Entry, String> {
     let source = fs::read_to_string(path)
         .map_err(|error| format!("读取 Markdown 文件失败 `{}`：{error}", path.display()))?;
     let relative_path = path
@@ -151,10 +151,7 @@ fn build_entry(display_root: &Path, title_root: &Path, path: &Path) -> Result<En
     Ok(Entry {
         title,
         relative_path,
-        source_path: title_root.join(
-            path.strip_prefix(title_root)
-                .map_err(|_| format!("无法计算标题相对路径：`{}`。", path.display()))?,
-        ),
+        source_path: path.to_path_buf(),
     })
 }
 

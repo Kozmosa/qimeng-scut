@@ -41,10 +41,8 @@ impl TextInput {
 
     pub fn submit(&mut self) {
         let trimmed = self.value.trim().to_string();
-        if !trimmed.is_empty() {
-            if self.history.last() != Some(&trimmed) {
-                self.history.push(trimmed);
-            }
+        if !trimmed.is_empty() && self.history.last() != Some(&trimmed) {
+            self.history.push(trimmed);
         }
         self.value.clear();
         self.cursor = 0;

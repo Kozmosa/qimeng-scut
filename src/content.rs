@@ -168,27 +168,28 @@ impl ContentRenderCache {
 
 impl RichContentRenderCache {
     pub fn new(source: &str, width: usize) -> Self {
-        let parsed = tui_markdown::from_str(source);
-        let lines: Vec<ratatui::text::Line<'static>> = parsed
-            .lines
-            .into_iter()
-            .map(|line| {
-                let spans: Vec<ratatui::text::Span<'static>> = line
-                    .spans
-                    .into_iter()
-                    .map(|span| {
-                        ratatui::text::Span::styled(
-                            span.content.to_string(),
-                            span.style,
-                        )
-                    })
-                    .collect();
-                ratatui::text::Line::from(spans).style(line.style)
-            })
-            .collect();
-        let text = Text::from(lines);
-        Self { width, text }
+        Self {
+            width,
+            text: render_rich_text(source),
+        }
     }
+}
+
+pub fn render_rich_text(source: &str) -> Text<'static> {
+    let parsed = tui_markdown::from_str(source);
+    let lines: Vec<ratatui::text::Line<'static>> = parsed
+        .lines
+        .into_iter()
+        .map(|line| {
+            let spans: Vec<ratatui::text::Span<'static>> = line
+                .spans
+                .into_iter()
+                .map(|span| ratatui::text::Span::styled(span.content.to_string(), span.style))
+                .collect();
+            ratatui::text::Line::from(spans).style(line.style)
+        })
+        .collect();
+    Text::from(lines)
 }
 
 pub fn resolve_title(markdown: &str, path: &Path) -> String {
@@ -240,7 +241,10 @@ fn extract_first_h1(markdown: &str) -> Option<String> {
 
     for event in parser {
         match event {
-            Event::Start(Tag::Heading { level, .. }) if level == HeadingLevel::H1 => {
+            Event::Start(Tag::Heading {
+                level: HeadingLevel::H1,
+                ..
+            }) => {
                 in_h1 = true;
             }
             Event::End(TagEnd::Heading(HeadingLevel::H1)) if in_h1 => {
@@ -518,21 +522,21 @@ impl MarkdownParser {
     }
 
     fn push_inline(&mut self, text: &str) {
-        for container in self.containers.iter_mut().rev() {
-            match container {
-                InlineContainer::Paragraph(buffer)
-                | InlineContainer::Quote(buffer)
-                | InlineContainer::Item { text: buffer, .. }
-                | InlineContainer::Heading(buffer)
-                | InlineContainer::Link { text: buffer, .. }
-                | InlineContainer::Image { alt: buffer, .. } => {
-                    buffer.push_str(text);
-                    return;
-                }
-                InlineContainer::CodeBlock { code, .. } => {
-                    code.push_str(text);
-                    return;
-                }
+        let Some(container) = self.containers.iter_mut().next_back() else {
+            return;
+        };
+
+        match container {
+            InlineContainer::Paragraph(buffer)
+            | InlineContainer::Quote(buffer)
+            | InlineContainer::Item { text: buffer, .. }
+            | InlineContainer::Heading(buffer)
+            | InlineContainer::Link { text: buffer, .. }
+            | InlineContainer::Image { alt: buffer, .. } => {
+                buffer.push_str(text);
+            }
+            InlineContainer::CodeBlock { code, .. } => {
+                code.push_str(text);
             }
         }
     }
