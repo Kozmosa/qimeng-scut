@@ -51,7 +51,7 @@ fn render_path_prompt(frame: &mut Frame, app: &App) {
             Constraint::Length(3),
             Constraint::Length(5),
             Constraint::Min(8),
-            Constraint::Length(6),
+            Constraint::Length(3),
         ])
         .split(frame.area());
 
@@ -80,7 +80,7 @@ fn render_path_prompt(frame: &mut Frame, app: &App) {
     .wrap(Wrap { trim: false });
     frame.render_widget(body, centered_rect(80, 40, layout[2]));
 
-    let input_area = centered_rect(80, 28, layout[3]);
+    let input_area = centered_rect(80, 100, layout[3]);
     render_input_box(
         frame,
         input_area,
@@ -124,7 +124,7 @@ fn render_home(frame: &mut Frame, app: &App) {
 
     let meta = Paragraph::new(vec![
         Line::from(format!("版本：{}", env!("CARGO_PKG_VERSION"))),
-        Line::from("输入 `manual` 浏览本地手册，输入 `q` 退出程序。"),
+        Line::from("输入 `manual` 浏览手册，`help` 查看命令，`exit` 或 `q` 退出。"),
     ])
     .block(Block::default().borders(Borders::TOP));
     frame.render_widget(meta, layout[1]);

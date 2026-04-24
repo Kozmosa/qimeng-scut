@@ -84,33 +84,26 @@ impl App {
     pub fn new() -> Self {
         let default_path = PathBuf::from(DEFAULT_MANUAL_REPO);
         let default_input = default_path.display().to_string();
+        let path_valid = manual::validate_repo_root(&default_path).is_ok();
 
-        if manual::validate_repo_root(&default_path).is_ok() {
-            Self {
-                mode: AppMode::Home,
-                should_quit: false,
-                manual_repo_path: default_path,
-                command_input: TextInput::default(),
-                path_input: TextInput::new(default_input),
-                status: Some(StatusMessage {
+        Self {
+            mode: AppMode::Home,
+            should_quit: false,
+            manual_repo_path: default_path,
+            command_input: TextInput::default(),
+            path_input: TextInput::new(default_input),
+            status: Some(if path_valid {
+                StatusMessage {
                     kind: StatusKind::Info,
                     text: "输入 `manual` 进入手册浏览模式。".to_string(),
-                }),
-                manual_state: None,
-            }
-        } else {
-            Self {
-                mode: AppMode::PathPrompt,
-                should_quit: false,
-                manual_repo_path: default_path,
-                command_input: TextInput::default(),
-                path_input: TextInput::new(default_input),
-                status: Some(StatusMessage {
+                }
+            } else {
+                StatusMessage {
                     kind: StatusKind::Error,
-                    text: "默认手册仓库无效，请输入一个包含 docs/ 的本地路径。".to_string(),
-                }),
-                manual_state: None,
-            }
+                    text: "默认手册仓库无效，输入 `manual` 时需指定一个包含 docs/ 的本地路径。".to_string(),
+                }
+            }),
+            manual_state: None,
         }
     }
 
@@ -160,11 +153,20 @@ impl App {
                 "manual" => {
                     self.open_manual_mode();
                 }
+                "help" => {
+                    self.status = Some(StatusMessage {
+                        kind: StatusKind::Info,
+                        text: "可用命令：manual（浏览手册）、help（显示帮助）、exit（退出程序）。".to_string(),
+                    });
+                }
+                "exit" => {
+                    self.should_quit = true;
+                }
                 "" => {}
                 other => {
                     self.status = Some(StatusMessage {
                         kind: StatusKind::Error,
-                        text: format!("未知命令：`{other}`。当前仅支持 `manual`。"),
+                        text: format!("未知命令：`{other}`。输入 `help` 查看可用命令。"),
                     });
                 }
             }
@@ -201,6 +203,14 @@ impl App {
     }
 
     fn open_manual_mode(&mut self) {
+        if manual::validate_repo_root(&self.manual_repo_path).is_err() {
+            self.mode = AppMode::PathPrompt;
+            self.status = Some(StatusMessage {
+                kind: StatusKind::Error,
+                text: "当前手册仓库路径无效，请输入一个包含 docs/ 的本地路径。".to_string(),
+            });
+            return;
+        }
         self.manual_state = Some(ManualState::new(self.manual_repo_path.clone()));
         self.mode = AppMode::Manual;
         self.status = None;
