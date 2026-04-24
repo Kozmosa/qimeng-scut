@@ -187,8 +187,7 @@ fn render_manual(frame: &mut Frame, app: &mut App) {
             Span::raw(" · Manual"),
         ]),
         Line::from(format!("仓库路径：{}", manual.repo_path.display())),
-    ])
-    .block(Block::default().borders(Borders::BOTTOM));
+    ]);
     frame.render_widget(header, layout[0]);
 
     let columns = manual_layout_columns(layout[1].width, layout[1].height);

@@ -183,7 +183,7 @@ impl RichContentRenderCache {
                         )
                     })
                     .collect();
-                ratatui::text::Line::from(spans)
+                ratatui::text::Line::from(spans).style(line.style)
             })
             .collect();
         let text = Text::from(lines);

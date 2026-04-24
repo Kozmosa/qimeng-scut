@@ -357,7 +357,7 @@ impl ManualState {
                         ratatui::text::Span::styled(span.content.to_string(), span.style)
                     })
                     .collect();
-                ratatui::text::Line::from(spans)
+                ratatui::text::Line::from(spans).style(line.style)
             })
             .collect();
         ratatui::text::Text::from(lines)
