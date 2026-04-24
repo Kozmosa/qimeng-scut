@@ -315,10 +315,42 @@ fn render_content_pane(frame: &mut Frame, area: Rect, manual: &mut ManualFocusSt
     let inner = block.inner(area);
     manual.sync_content_layout(inner.width, inner.height);
     let text = manual.rendered_content_text(inner.width as usize);
-    let paragraph = Paragraph::new(text)
-        .block(block)
-        .scroll((manual.content_scroll, 0));
-    frame.render_widget(paragraph, area);
+
+    if manual.content_dual_column && inner.width >= 6 {
+        let gap = 1u16;
+        let half = (inner.width.saturating_sub(gap)) / 2;
+        let left_area = Rect {
+            x: inner.x,
+            y: inner.y,
+            width: half,
+            height: inner.height,
+        };
+        let right_area = Rect {
+            x: inner.x + half + gap,
+            y: inner.y,
+            width: inner.width - half - gap,
+            height: inner.height,
+        };
+
+        let mid = text.lines.len() / 2 + text.lines.len() % 2;
+        let left_lines: Vec<Line> = text.lines.iter().take(mid).cloned().collect();
+        let right_lines: Vec<Line> = text.lines.iter().skip(mid).cloned().collect();
+
+        let left_text = Text::from(left_lines);
+        let right_text = Text::from(right_lines);
+
+        let left_para = Paragraph::new(left_text).scroll((manual.content_scroll, 0));
+        let right_para = Paragraph::new(right_text).scroll((manual.content_scroll, 0));
+
+        frame.render_widget(left_para, left_area);
+        frame.render_widget(right_para, right_area);
+        frame.render_widget(block, area);
+    } else {
+        let paragraph = Paragraph::new(text)
+            .block(block)
+            .scroll((manual.content_scroll, 0));
+        frame.render_widget(paragraph, area);
+    }
 }
 
 fn render_list(
