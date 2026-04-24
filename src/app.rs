@@ -5,7 +5,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 use crate::{
-    content::{Block, ContentRenderCache, DocumentContent},
+    content::{Block, DocumentContent, RichContentRenderCache},
     input::TextInput,
     manual::{self, Entry, ManualRepo, Section},
     ui,
@@ -49,8 +49,8 @@ pub struct StatusMessage {
 pub struct LoadedDocument {
     pub title: String,
     pub relative_path: PathBuf,
-    content: DocumentContent,
-    render_cache: Option<ContentRenderCache>,
+    source: String,
+    render_cache: Option<RichContentRenderCache>,
 }
 
 #[derive(Debug)]
@@ -207,26 +207,26 @@ impl App {
 
 impl LoadedDocument {
     fn from_entry(entry: &Entry) -> Self {
-        let content = match fs::read_to_string(&entry.source_path) {
-            Ok(source) => DocumentContent::parse(&source),
-            Err(error) => placeholder_document(format!(
+        let source = match fs::read_to_string(&entry.source_path) {
+            Ok(source) => source,
+            Err(error) => format!(
                 "读取文档失败：{} ({error})",
                 entry.source_path.display()
-            )),
+            ),
         };
 
         Self {
             title: entry.title.clone(),
             relative_path: entry.relative_path.clone(),
-            content,
+            source,
             render_cache: None,
         }
     }
 
-    fn ensure_cache(&mut self, width: usize) -> &ContentRenderCache {
+    fn ensure_cache(&mut self, width: usize) -> &RichContentRenderCache {
         let width = width.max(12);
         if self.render_cache.as_ref().map(|cache| cache.width) != Some(width) {
-            self.render_cache = Some(ContentRenderCache::new(&self.content, width));
+            self.render_cache = Some(RichContentRenderCache::new(&self.source, width));
         }
 
         self.render_cache
@@ -316,26 +316,38 @@ impl ManualState {
         "内容".to_string()
     }
 
-    pub fn rendered_content_lines(&mut self, width: usize) -> Vec<String> {
+    pub fn rendered_content_text(&mut self, width: usize) -> ratatui::text::Text<'static> {
         let width = width.max(12);
         if let Some(document) = self.loaded_document.as_mut() {
-            return document.ensure_cache(width).lines.clone();
+            return document.ensure_cache(width).text.clone();
         }
 
-        if let Some(error) = &self.error {
-            return placeholder_document(error.clone()).render_lines(width);
-        }
+        let placeholder = if let Some(error) = &self.error {
+            format!("读取失败：{error}")
+        } else if self.sections().is_empty() {
+            "docs/ 中没有可浏览的 Markdown 文档。".to_string()
+        } else if self.active_entries().is_empty() {
+            "No documents".to_string()
+        } else {
+            "按 Enter 打开当前文档。".to_string()
+        };
 
-        if self.sections().is_empty() {
-            return placeholder_document("docs/ 中没有可浏览的 Markdown 文档。")
-                .render_lines(width);
-        }
-
-        if self.active_entries().is_empty() {
-            return placeholder_document("No documents").render_lines(width);
-        }
-
-        placeholder_document("按 Enter 打开当前文档。").render_lines(width)
+        let parsed = tui_markdown::from_str(&placeholder);
+        let lines: Vec<ratatui::text::Line<'static>> = parsed
+            .lines
+            .into_iter()
+            .map(|line| {
+                let spans: Vec<ratatui::text::Span<'static>> = line
+                    .spans
+                    .into_iter()
+                    .map(|span| {
+                        ratatui::text::Span::styled(span.content.to_string(), span.style)
+                    })
+                    .collect();
+                ratatui::text::Line::from(spans)
+            })
+            .collect();
+        ratatui::text::Text::from(lines)
     }
 
     pub fn sync_content_layout(&mut self, width: u16, height: u16) {
@@ -344,6 +356,19 @@ impl ManualState {
             document.ensure_cache(width as usize);
         }
         self.clamp_scroll(width as usize);
+    }
+
+    pub fn rendered_content_lines(&mut self, width: usize) -> Vec<String> {
+        let text = self.rendered_content_text(width);
+        text.lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect()
     }
 
     pub fn focus_left(&mut self) {
@@ -440,9 +465,9 @@ impl ManualState {
         let width = width.max(12);
         let viewport_height = self.content_viewport_height.max(1) as usize;
         let total_lines = if let Some(document) = self.loaded_document.as_mut() {
-            document.ensure_cache(width).lines.len()
+            document.ensure_cache(width).text.lines.len()
         } else {
-            self.rendered_content_lines(width).len()
+            self.rendered_content_text(width).lines.len()
         };
         let max_scroll = total_lines.saturating_sub(viewport_height);
         self.content_scroll = self.content_scroll.min(max_scroll as u16);
@@ -469,6 +494,7 @@ pub fn run_app(terminal: &mut AppTerminal, mut app: App) -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn placeholder_document(message: impl Into<String>) -> DocumentContent {
     DocumentContent {
         blocks: vec![Block::Placeholder(message.into())],
