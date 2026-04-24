@@ -1,0 +1,100 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package (Unix)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          mkdir -p dist
+          binary_name="qimeng-scut"
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            binary_name="qimeng-scut.exe"
+          fi
+          cp "target/${{ matrix.target }}/release/${binary_name}" "dist/"
+          cd dist
+          tar czf "qimeng-scut-${{ github.ref_name }}-${{ matrix.target }}.tar.gz" "${binary_name}"
+
+      - name: Package (Windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $binary = "target/${{ matrix.target }}/release/qimeng-scut.exe"
+          Copy-Item $binary -Destination "dist/"
+          $archive = "dist/qimeng-scut-${{ github.ref_name }}-${{ matrix.target }}.zip"
+          Compress-Archive -Path "dist/qimeng-scut.exe" -DestinationPath $archive
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: qimeng-scut-${{ github.ref_name }}-${{ matrix.target }}
+          path: dist/qimeng-scut-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4.2.2
+        with:
+          path: artifacts
+          pattern: qimeng-scut-*
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -R artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2.2.2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
