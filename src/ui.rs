@@ -191,14 +191,7 @@ fn render_manual(frame: &mut Frame, app: &mut App) {
     .block(Block::default().borders(Borders::BOTTOM));
     frame.render_widget(header, layout[0]);
 
-    let columns = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(20),
-            Constraint::Percentage(30),
-            Constraint::Percentage(50),
-        ])
-        .split(layout[1]);
+    let columns = manual_layout_columns(layout[1].width, layout[1].height);
 
     render_section_pane(frame, columns[0], manual);
     render_entry_pane(frame, columns[1], manual);
@@ -209,6 +202,37 @@ fn render_manual(frame: &mut Frame, app: &mut App) {
             .style(Style::default().fg(Color::DarkGray))
             .alignment(Alignment::Center);
     frame.render_widget(footer, layout[2]);
+}
+
+const SECTION_MAX_WIDTH: u16 = 28;
+const ENTRY_MAX_WIDTH: u16 = 40;
+const WIDE_LAYOUT_THRESHOLD: u16 = 160;
+
+fn manual_layout_columns(area_width: u16, _area_height: u16) -> Vec<Rect> {
+    let constraints = if area_width < WIDE_LAYOUT_THRESHOLD {
+        vec![
+            Constraint::Percentage(20),
+            Constraint::Percentage(30),
+            Constraint::Percentage(50),
+        ]
+    } else {
+        vec![
+            Constraint::Max(SECTION_MAX_WIDTH),
+            Constraint::Max(ENTRY_MAX_WIDTH),
+            Constraint::Min(80),
+        ]
+    };
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(constraints)
+        .split(Rect {
+            x: 0,
+            y: 0,
+            width: area_width,
+            height: _area_height,
+        })
+        .to_vec()
 }
 
 fn render_section_pane(frame: &mut Frame, area: Rect, manual: &ManualFocusState) {
