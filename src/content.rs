@@ -1,6 +1,7 @@
 use std::{ffi::OsStr, path::Path};
 
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use ratatui::text::Text;
 use serde::Deserialize;
 use textwrap::{wrap, Options as WrapOptions};
 
@@ -38,6 +39,12 @@ pub struct ListItem {
 pub struct ContentRenderCache {
     pub width: usize,
     pub lines: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RichContentRenderCache {
+    pub width: usize,
+    pub text: Text<'static>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -156,6 +163,31 @@ impl ContentRenderCache {
             width,
             lines: content.render_lines(width),
         }
+    }
+}
+
+impl RichContentRenderCache {
+    pub fn new(source: &str, width: usize) -> Self {
+        let parsed = tui_markdown::from_str(source);
+        let lines: Vec<ratatui::text::Line<'static>> = parsed
+            .lines
+            .into_iter()
+            .map(|line| {
+                let spans: Vec<ratatui::text::Span<'static>> = line
+                    .spans
+                    .into_iter()
+                    .map(|span| {
+                        ratatui::text::Span::styled(
+                            span.content.to_string(),
+                            span.style,
+                        )
+                    })
+                    .collect();
+                ratatui::text::Line::from(spans)
+            })
+            .collect();
+        let text = Text::from(lines);
+        Self { width, text }
     }
 }
 
