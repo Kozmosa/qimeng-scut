@@ -148,8 +148,9 @@ impl App {
 
     fn handle_home(&mut self, key: KeyEvent) {
         if matches!(key.code, KeyCode::Enter) {
-            let command = self.command_input.value().trim();
-            match command {
+            let command = self.command_input.value().trim().to_string();
+            self.command_input.submit();
+            match command.as_str() {
                 "manual" => {
                     self.open_manual_mode();
                 }
@@ -170,7 +171,6 @@ impl App {
                     });
                 }
             }
-            self.command_input.clear();
             return;
         }
 

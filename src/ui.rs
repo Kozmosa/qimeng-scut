@@ -342,8 +342,12 @@ fn render_content_pane(frame: &mut Frame, area: Rect, manual: &mut ManualFocusSt
         let left_text = Text::from(left_lines);
         let right_text = Text::from(right_lines);
 
-        let left_para = Paragraph::new(left_text).scroll((manual.content_scroll, 0));
-        let right_para = Paragraph::new(right_text).scroll((manual.content_scroll, 0));
+        let left_para = Paragraph::new(left_text)
+            .scroll((manual.content_scroll, 0))
+            .wrap(Wrap { trim: false });
+        let right_para = Paragraph::new(right_text)
+            .scroll((manual.content_scroll, 0))
+            .wrap(Wrap { trim: false });
 
         frame.render_widget(left_para, left_area);
         frame.render_widget(right_para, right_area);
@@ -351,7 +355,8 @@ fn render_content_pane(frame: &mut Frame, area: Rect, manual: &mut ManualFocusSt
     } else {
         let paragraph = Paragraph::new(text)
             .block(block)
-            .scroll((manual.content_scroll, 0));
+            .scroll((manual.content_scroll, 0))
+            .wrap(Wrap { trim: false });
         frame.render_widget(paragraph, area);
     }
 }
