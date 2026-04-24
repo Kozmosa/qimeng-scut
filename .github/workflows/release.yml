@@ -37,7 +37,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -70,7 +70,7 @@ jobs:
           Compress-Archive -Path "dist/qimeng-scut.exe" -DestinationPath $archive
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: qimeng-scut-${{ github.ref_name }}-${{ matrix.target }}
           path: dist/qimeng-scut-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive }}
@@ -81,10 +81,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v4.2.2
         with:
           path: artifacts
           pattern: qimeng-scut-*
@@ -94,7 +94,7 @@ jobs:
         run: ls -R artifacts
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.2.2
         with:
           files: artifacts/*
           generate_release_notes: true
