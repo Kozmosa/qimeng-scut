@@ -197,10 +197,14 @@ fn render_manual(frame: &mut Frame, app: &mut App) {
     render_entry_pane(frame, columns[1], manual);
     render_content_pane(frame, columns[2], manual);
 
-    let footer =
-        Paragraph::new("q: 退出  Esc: 返回首页  ←/→: 切换栏位  ↑/↓: 移动或滚动  Enter: 确认")
-            .style(Style::default().fg(Color::DarkGray))
-            .alignment(Alignment::Center);
+    let footer_text = if manual.content_dual_column {
+        "q: 退出  Esc: 返回首页  ←/→: 切换栏位  ↑/↓: 移动或滚动  Enter: 确认  t: 单栏"
+    } else {
+        "q: 退出  Esc: 返回首页  ←/→: 切换栏位  ↑/↓: 移动或滚动  Enter: 确认  t: 双栏"
+    };
+    let footer = Paragraph::new(footer_text)
+        .style(Style::default().fg(Color::DarkGray))
+        .alignment(Alignment::Center);
     frame.render_widget(footer, layout[2]);
 }
 
