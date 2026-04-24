@@ -290,12 +290,10 @@ fn render_content_pane(frame: &mut Frame, area: Rect, manual: &mut ManualFocusSt
     let block = pane_block(&title, manual.focus == ManualFocus::Content);
     let inner = block.inner(area);
     manual.sync_content_layout(inner.width, inner.height);
-    let lines = manual.rendered_content_lines(inner.width as usize);
-    let paragraph = Paragraph::new(Text::from(
-        lines.into_iter().map(Line::from).collect::<Vec<_>>(),
-    ))
-    .block(block)
-    .scroll((manual.content_scroll, 0));
+    let text = manual.rendered_content_text(inner.width as usize);
+    let paragraph = Paragraph::new(text)
+        .block(block)
+        .scroll((manual.content_scroll, 0));
     frame.render_widget(paragraph, area);
 }
 
